@@ -272,7 +272,7 @@ def main():
 		st.write("""
 		Hello and welcome to my Connect 4 AI demonstrator,
 		
-		This simple Python/Streamlit app allows you to play against an agent that I created for the [ConnnectX](https://www.kaggle.com/competitions/connectx/leaderboard) Kaggle competition. My best submission consistently ranked in the Top 20 on the leaderboard (Top 10%). \n
+		This simple Python/Streamlit app allows you to play against an agent that I created for the [ConnectX](https://www.kaggle.com/competitions/connectx/leaderboard) Kaggle competition. My best submission consistently ranked in the Top 20 on the leaderboard (Top 10%). \n
 		
 		**Rules:**
 		You play by dropping the red pieces, try to connect 4 of them in a row (either vertically, horizontally, or diagonally) before the AI does it with the yellow pieces.
