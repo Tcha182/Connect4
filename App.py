@@ -278,7 +278,7 @@ def main():
 		You play by dropping the red pieces, try to connect 4 of them in a row (either vertically, horizontally, or diagonally) before the AI does it with the yellow pieces.
 		
 		*Note:
-		To keep the game enjoyable, you are playing against an early, tamed down version of the AI with limited Minimax depth of 2 moves per player and a less advanced heuristic. Although not as "smart" as the final submission, you will see that it is already quite challenging to beat.*
+		To keep the game enjoyable, you are playing against an early, tamed down version of the AI with limited Minimax depth of 2 moves per player and a less advanced heuristic. Although not as "smart" as the final submission, you might find that it is already quite challenging to beat.*
 		
 
 		have fun!
