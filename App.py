@@ -3,7 +3,7 @@ import numpy as np
 import random
 import math
 
-st.set_page_config(page_title='Connect 4 AI', page_icon='🟡')
+st.set_page_config(page_title='Connect 4 AI', page_icon='🔴')
 
 ROW_COUNT = 6
 COLUMN_COUNT = 7
