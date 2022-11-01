@@ -116,6 +116,7 @@ def score_position(board, piece):
 			window = [board[r+i][c+i] for i in range(WINDOW_LENGTH)]
 			score += evaluate_window(window, piece)
 
+	## Score negative sloped diagonal
 	for r in range(ROW_COUNT-3):
 		for c in range(COLUMN_COUNT-3):
 			window = [board[r+3-i][c+i] for i in range(WINDOW_LENGTH)]
@@ -178,21 +179,6 @@ def get_valid_locations(board):
 			valid_locations.append(col)
 	return valid_locations
 
-def pick_best_move(board, piece):
-
-	valid_locations = get_valid_locations(board)
-	best_score = -10000
-	best_col = random.choice(valid_locations)
-	for col in valid_locations:
-		row = get_next_open_row(board, col)
-		temp_board = board.copy()
-		drop_piece(temp_board, row, col, piece)
-		score = score_position(temp_board, piece)
-		if score > best_score:
-			best_score = score
-			best_col = col
-
-	return best_col
 
 def handle_click(col):
 
@@ -272,13 +258,13 @@ def main():
 		st.write("""
 		Hello and welcome to my Connect 4 AI demonstrator,
 		
-		This simple Python/Streamlit app allows you to play against an agent that I created for the [ConnectX](https://www.kaggle.com/competitions/connectx/leaderboard) Kaggle competition. My best submission consistently ranked in the Top 20 on the leaderboard (Top 10%). \n
+		This simple Python/Streamlit app allows you to play against an agent that I created for the [ConnnectX](https://www.kaggle.com/competitions/connectx/leaderboard) Kaggle competition. My best submission consistently ranked in the Top 20 on the leaderboard (Top 10%). \n
 		
 		**Rules:**
 		You play by dropping the red pieces, try to connect 4 of them in a row (either vertically, horizontally, or diagonally) before the AI does it with the yellow pieces.
 		
 		*Note:
-		To keep the game enjoyable, you are playing against an early, tamed down version of the AI with limited Minimax depth of 2 moves per player and a less advanced heuristic. Although not as "smart" as the final submission, you might find that it is already quite challenging to beat.*
+		To keep the game enjoyable, you are playing against an early, tamed down version of the AI with limited Minimax depth of 2 moves per player and a less advanced heuristic. Although not as "smart" as the final submission, you will see that it is already quite challenging to beat.*
 		
 
 		have fun!
