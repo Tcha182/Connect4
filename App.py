@@ -269,7 +269,7 @@ def main():
 
 		have fun!
 
-		Corentin de Tilly - [LinkedIn](https://www.linkedin.com/in/corentin-de-tilly/?locale=en_US) - [GitHub](https://github.com/Tcha182) - [CV](https://tcha182-resume-corentindetilly-lp3gwb.streamlitapp.com/)
+		Corentin de Tilly - [LinkedIn](https://www.linkedin.com/in/corentin-de-tilly/?locale=en_US) - [GitHub](https://github.com/Tcha182) - [CV](https://resume-corentindetilly.streamlit.app/)
 
 		""")
 
