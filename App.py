@@ -2,299 +2,298 @@ import streamlit as st
 import numpy as np
 import random
 import math
+from typing import List, Tuple, Optional
 
-st.set_page_config(page_title='Connect 4 AI', page_icon='🔴')
-
+# Game Constants
 ROW_COUNT = 6
 COLUMN_COUNT = 7
-
-PLAYER = 0
-AI = 1
-
+WINDOW_LENGTH = 4
 EMPTY = 0
 PLAYER_PIECE = 1
 AI_PIECE = 2
+DEPTH = 5  # Hardcoded AI search depth
 
-WINDOW_LENGTH = 4
+# Streamlit Page Configuration
+st.set_page_config(page_title='Connect 4 AI', page_icon='🔴')
 
-DEPTH = 5
+class Connect4Game:
+	def __init__(self):
+		self.board = np.zeros((ROW_COUNT, COLUMN_COUNT), dtype=int)
+		self.game_over = False
+		self.winner: Optional[int] = None
+		self.turn = 0  # 0 = Player's turn, 1 = AI's turn
+		self.transposition_table = {}
 
-def init(start=False):
-	st.session_state.game_over = False
-	create_board()
-	st.session_state.winner = None
-	if start:
-		st.session_state.turn = 1
+	def create_board(self):
+		self.board = np.zeros((ROW_COUNT, COLUMN_COUNT), dtype=int)
 
-def create_board():
-	st.session_state.turn = 0
-	st.session_state.board = np.zeros((ROW_COUNT,COLUMN_COUNT))
-	return st.session_state.board
+	def drop_piece(self, row: int, col: int, piece: int):
+		self.board[row][col] = piece
 
-def drop_piece(board, row, col, piece):
-	board[row][col] = piece
+	def is_valid_location(self, col: int) -> bool:
+		return self.board[ROW_COUNT - 1][col] == EMPTY
 
-def is_valid_location(board, col):
-	return board[ROW_COUNT-1][col] == 0
-
-def get_next_open_row(board, col):
-	for r in range(ROW_COUNT):
-		if board[r][col] == 0:
-			return r
-
-# def print_board(board):
-# 	st.write(np.flip(board, 0))
-
-def winning_move(board, piece):
-	# Check horizontal locations for win
-	for c in range(COLUMN_COUNT-3):
+	def get_next_open_row(self, col: int) -> int:
 		for r in range(ROW_COUNT):
-			if board[r][c] == piece and board[r][c+1] == piece and board[r][c+2] == piece and board[r][c+3] == piece:
-				return True
+			if self.board[r][col] == EMPTY:
+				return r
+		raise ValueError("Column is full")
 
-	# Check vertical locations for win
-	for c in range(COLUMN_COUNT):
-		for r in range(ROW_COUNT-3):
-			if board[r][c] == piece and board[r+1][c] == piece and board[r+2][c] == piece and board[r+3][c] == piece:
-				return True
+	def winning_move(self, piece: int) -> bool:
+		# Horizontal check
+		for c in range(COLUMN_COUNT - 3):
+			for r in range(ROW_COUNT):
+				if all(self.board[r][c + i] == piece for i in range(WINDOW_LENGTH)):
+					return True
 
-	# Check positively sloped diaganols
-	for c in range(COLUMN_COUNT-3):
-		for r in range(ROW_COUNT-3):
-			if board[r][c] == piece and board[r+1][c+1] == piece and board[r+2][c+2] == piece and board[r+3][c+3] == piece:
-				return True
+		# Vertical check
+		for c in range(COLUMN_COUNT):
+			for r in range(ROW_COUNT - 3):
+				if all(self.board[r + i][c] == piece for i in range(WINDOW_LENGTH)):
+					return True
 
-	# Check negatively sloped diaganols
-	for c in range(COLUMN_COUNT-3):
-		for r in range(3, ROW_COUNT):
-			if board[r][c] == piece and board[r-1][c+1] == piece and board[r-2][c+2] == piece and board[r-3][c+3] == piece:
-				return True
+		# Positive diagonal check
+		for c in range(COLUMN_COUNT - 3):
+			for r in range(ROW_COUNT - 3):
+				if all(self.board[r + i][c + i] == piece for i in range(WINDOW_LENGTH)):
+					return True
 
-def evaluate_window(window, piece):
-	score = 0
-	opp_piece = PLAYER_PIECE
-	if piece == PLAYER_PIECE:
-		opp_piece = AI_PIECE
+		# Negative diagonal check
+		for c in range(COLUMN_COUNT - 3):
+			for r in range(3, ROW_COUNT):
+				if all(self.board[r - i][c + i] == piece for i in range(WINDOW_LENGTH)):
+					return True
 
-	if window.count(piece) == 4:
-		score += 100
-	elif window.count(piece) == 3 and window.count(EMPTY) == 1:
-		score += 5
-	elif window.count(piece) == 2 and window.count(EMPTY) == 2:
-		score += 2
+		return False
 
-	if window.count(opp_piece) == 3 and window.count(EMPTY) == 1:
-		score -= 4
+	def evaluate_window(self, window: List[int], piece: int) -> int:
+		score = 0
+		opp_piece = PLAYER_PIECE if piece == AI_PIECE else AI_PIECE
 
-	return score
+		if window.count(piece) == 4:
+			score += 100
+		elif window.count(piece) == 3 and window.count(EMPTY) == 1:
+			score += 10
+		elif window.count(piece) == 2 and window.count(EMPTY) == 2:
+			score += 5
 
-def score_position(board, piece):
-	score = 0
+		if window.count(opp_piece) == 3 and window.count(EMPTY) == 1:
+			score -= 80
 
-	## Score center column
-	center_array = [int(i) for i in list(board[:, COLUMN_COUNT//2])]
-	center_count = center_array.count(piece)
-	score += center_count * 3
+		return score
 
-	## Score Horizontal
-	for r in range(ROW_COUNT):
-		row_array = [int(i) for i in list(board[r,:])]
-		for c in range(COLUMN_COUNT-3):
-			window = row_array[c:c+WINDOW_LENGTH]
-			score += evaluate_window(window, piece)
+	def score_position(self, piece: int) -> int:
+		score = 0
 
-	## Score Vertical
-	for c in range(COLUMN_COUNT):
-		col_array = [int(i) for i in list(board[:,c])]
-		for r in range(ROW_COUNT-3):
-			window = col_array[r:r+WINDOW_LENGTH]
-			score += evaluate_window(window, piece)
+		# Center column preference
+		center_array = list(self.board[:, COLUMN_COUNT // 2])
+		center_count = center_array.count(piece)
+		score += center_count * 6
 
-	## Score posiive sloped diagonal
-	for r in range(ROW_COUNT-3):
-		for c in range(COLUMN_COUNT-3):
-			window = [board[r+i][c+i] for i in range(WINDOW_LENGTH)]
-			score += evaluate_window(window, piece)
+		# Horizontal scoring
+		for r in range(ROW_COUNT):
+			row_array = list(self.board[r, :])
+			for c in range(COLUMN_COUNT - 3):
+				window = row_array[c:c + WINDOW_LENGTH]
+				score += self.evaluate_window(window, piece)
 
-	## Score negative sloped diagonal
-	for r in range(ROW_COUNT-3):
-		for c in range(COLUMN_COUNT-3):
-			window = [board[r+3-i][c+i] for i in range(WINDOW_LENGTH)]
-			score += evaluate_window(window, piece)
+		# Vertical scoring
+		for c in range(COLUMN_COUNT):
+			col_array = list(self.board[:, c])
+			for r in range(ROW_COUNT - 3):
+				window = col_array[r:r + WINDOW_LENGTH]
+				score += self.evaluate_window(window, piece)
 
-	return score
+		# Positive diagonal scoring
+		for r in range(ROW_COUNT - 3):
+			for c in range(COLUMN_COUNT - 3):
+				window = [self.board[r + i][c + i] for i in range(WINDOW_LENGTH)]
+				score += self.evaluate_window(window, piece)
 
-def is_terminal_node(board):
-	return winning_move(board, PLAYER_PIECE) or winning_move(board, AI_PIECE) or len(get_valid_locations(board)) == 0
+		# Negative diagonal scoring
+		for r in range(ROW_COUNT - 3):
+			for c in range(COLUMN_COUNT - 3):
+				window = [self.board[r + 3 - i][c + i] for i in range(WINDOW_LENGTH)]
+				score += self.evaluate_window(window, piece)
 
-def minimax(board, depth, alpha, beta, maximizingPlayer):
-	valid_locations = get_valid_locations(board)
-	is_terminal = is_terminal_node(board)
-	if depth == 0 or is_terminal:
-		if is_terminal:
-			if winning_move(board, AI_PIECE):
-				return (None, 100000000000000)
-			elif winning_move(board, PLAYER_PIECE):
-				return (None, -10000000000000)
-			else: # Game is over, no more valid moves
-				return (None, 0)
-		else: # Depth is zero
-			return (None, score_position(board, AI_PIECE))
-	if maximizingPlayer:
-		value = -math.inf
-		column = random.choice(valid_locations)
+		return score
+
+	def is_terminal_node(self) -> bool:
+		return (self.winning_move(PLAYER_PIECE) or
+				self.winning_move(AI_PIECE) or
+				len(self.get_valid_locations()) == 0)
+
+	def get_valid_locations(self) -> List[int]:
+		return [col for col in range(COLUMN_COUNT) if self.is_valid_location(col)]
+
+	def order_moves(self, valid_locations: List[int], piece: int) -> List[int]:
+		scores = []
 		for col in valid_locations:
-			row = get_next_open_row(board, col)
-			b_copy = board.copy()
-			drop_piece(b_copy, row, col, AI_PIECE)
-			new_score = minimax(b_copy, depth-1, alpha, beta, False)[1]
-			if new_score > value:
-				value = new_score
-				column = col
-			alpha = max(alpha, value)
-			if alpha >= beta:
-				break
-		return column, value
+			row = self.get_next_open_row(col)
+			temp_board = self.board.copy()
+			self.drop_piece(row, col, piece)
+			score = self.score_position(piece)
+			scores.append((score, col))
+			self.board[row][col] = EMPTY  # Undo move
+		scores.sort(reverse=True)
+		ordered_moves = [col for score, col in scores]
+		return ordered_moves
 
-	else: # Minimizing player
-		value = math.inf
-		column = random.choice(valid_locations)
-		for col in valid_locations:
-			row = get_next_open_row(board, col)
-			b_copy = board.copy()
-			drop_piece(b_copy, row, col, PLAYER_PIECE)
-			new_score = minimax(b_copy, depth-1, alpha, beta, True)[1]
-			if new_score < value:
-				value = new_score
-				column = col
-			beta = min(beta, value)
-			if alpha >= beta:
-				break
-		return column, value
+	def minimax(self, depth: int, alpha: float, beta: float, maximizingPlayer: bool) -> Tuple[Optional[int], int]:
+		valid_locations = self.get_valid_locations()
+		is_terminal = self.is_terminal_node()
+		if depth == 0 or is_terminal:
+			if is_terminal:
+				if self.winning_move(AI_PIECE):
+					return (None, math.inf)
+				elif self.winning_move(PLAYER_PIECE):
+					return (None, -math.inf)
+				else:
+					return (None, 0)
+			else:
+				return (None, self.score_position(AI_PIECE))
 
-def get_valid_locations(board):
-	valid_locations = []
-	for col in range(COLUMN_COUNT):
-		if is_valid_location(board, col):
-			valid_locations.append(col)
-	return valid_locations
+		if maximizingPlayer:
+			value = -math.inf
+			best_col = random.choice(valid_locations)
+			ordered_locations = self.order_moves(valid_locations, AI_PIECE)
+			for col in ordered_locations:
+				row = self.get_next_open_row(col)
+				self.drop_piece(row, col, AI_PIECE)
+				new_score = self.minimax(depth - 1, alpha, beta, False)[1]
+				self.board[row][col] = EMPTY  # Undo move
+				if new_score > value:
+					value = new_score
+					best_col = col
+				alpha = max(alpha, value)
+				if alpha >= beta:
+					break
+			return best_col, value
+		else:
+			value = math.inf
+			best_col = random.choice(valid_locations)
+			ordered_locations = self.order_moves(valid_locations, PLAYER_PIECE)
+			for col in ordered_locations:
+				row = self.get_next_open_row(col)
+				self.drop_piece(row, col, PLAYER_PIECE)
+				new_score = self.minimax(depth - 1, alpha, beta, True)[1]
+				self.board[row][col] = EMPTY  # Undo move
+				if new_score < value:
+					value = new_score
+					best_col = col
+				beta = min(beta, value)
+				if alpha >= beta:
+					break
+			return best_col, value
+
+	def handle_click(self, col: int):
+		if self.is_valid_location(col) and not self.game_over:
+			row = self.get_next_open_row(col)
+			self.drop_piece(row, col, PLAYER_PIECE)
+			if self.winning_move(PLAYER_PIECE):
+				self.game_over = True
+				self.winner = PLAYER_PIECE
+			self.turn = (self.turn + 1) % 2
+			if not self.game_over and self.turn == AI_PIECE - 1:
+				self.ai_move()
+
+	def ai_move(self):
+		col, _ = self.minimax(DEPTH, -math.inf, math.inf, True)
+		if col is not None and self.is_valid_location(col):
+			row = self.get_next_open_row(col)
+			self.drop_piece(row, col, AI_PIECE)
+			if self.winning_move(AI_PIECE):
+				self.game_over = True
+				self.winner = AI_PIECE
+			self.turn = (self.turn + 1) % 2
+
+	def draw_board(self):
+		st.markdown("<h1 style='text-align: center;'>Connect 4 AI</h1>", unsafe_allow_html=True)
+		with st.expander("CONNECT 4"):
+			st.write("""
+			Hello and welcome to my Connect 4 AI demonstrator,
+
+			This simple Python/Streamlit app allows you to play against an agent that I created for the [ConnnectX](https://www.kaggle.com/competitions/connectx/leaderboard) Kaggle competition. My best submission consistently ranked in the Top 20 on the leaderboard (Top 10%). \n
+
+			**Rules:**
+			You play by dropping the red pieces, try to connect 4 of them in a row (either vertically, horizontally, or diagonally) before the AI does it with the yellow pieces.
+
+			*Note:
+			To keep the game enjoyable, you are playing against an early, tamed down version of the AI with limited Minimax depth of 2 moves per player and a less advanced heuristic. Although not as "smart" as the final submission, you will see that it is already quite challenging to beat.*
 
 
-def handle_click(col):
+			have fun!
 
-		if is_valid_location(st.session_state.board, col):
-			row = get_next_open_row(st.session_state.board, col)
-			drop_piece(st.session_state.board, row, col, PLAYER_PIECE)
-			if winning_move(st.session_state.board, PLAYER_PIECE):
-				st.session_state.game_over = True
-				st.session_state.winner = PLAYER
+			Corentin de Tilly - [LinkedIn](https://www.linkedin.com/in/corentin-de-tilly/?locale=en_US) - [GitHub](https://github.com/Tcha182) - [CV](https://resume-corentindetilly.streamlit.app/)
 
-			st.session_state.turn += 1
-			st.session_state.turn = st.session_state.turn % 2
+			""")
+			
+		col1, col2 = st.columns([1,1])
+		if col1.button('New Game (You Start)', use_container_width=True):
+			self.__init__()
+		if col2.button('New Game (AI Starts)', use_container_width=True):
+			self.__init__()
+			self.turn = AI_PIECE - 1
+			self.ai_move()
 
+		st.write('')  # Spacer
 
-def ai_turn():
-	col, st.session_state.minimax_score = minimax(st.session_state.board, DEPTH, -math.inf, math.inf, True)
-	if is_valid_location(st.session_state.board, col):	
-		row = get_next_open_row(st.session_state.board, col)
-		drop_piece(st.session_state.board, row, col, AI_PIECE)		
+		valid_locations = self.get_valid_locations() if not self.game_over else []
+		cols = st.columns(COLUMN_COUNT)
 
-		if winning_move(st.session_state.board, AI_PIECE):
-			st.session_state.game_over = True
-			st.session_state.winner = AI
+		# Draw the top buttons for dropping pieces
+		for col in range(COLUMN_COUNT):
+			if cols[col].button('🔻', key=f'drop_{col}',use_container_width=True ,disabled=col not in valid_locations):
+				self.handle_click(col)
 
-		st.session_state.turn += 1
-		st.session_state.turn = st.session_state.turn % 2
+		# Draw the board
+		for row in range(ROW_COUNT - 1, -1, -1):
+			cols = st.columns(COLUMN_COUNT)
+			for col in range(COLUMN_COUNT):
+				piece = self.board[row][col]
+				cols[col].markdown(self.get_piece_html(piece), unsafe_allow_html=True)
 
+		if self.game_over:
+			if self.winner == PLAYER_PIECE:
+				st.success("Congratulations! You won the game! 🎉")
+			elif self.winner == AI_PIECE:
+				st.error("Game Over. The AI won the game. 🤖")
+			else:
+				st.info("It's a tie! 🤝")
 
-def draw_board(board):
-
-	col1, col2, _ = st.columns([1.4, 2.5, 5])
-	col1.button('New game', on_click=init)
-	col2.button('New game (AI starts)', on_click=init, args=(True,))
-
-	if st.session_state.game_over:
-		valid = []
-	else:
-		valid = get_valid_locations(board)
-
-	st.write(' ')
-
-	cols = st.columns([30,10,10,10,10,10,10,10,31])
-	for column in range(board.shape[1]):
-		disabled = column not in valid
-		cols[column + 1].button('🔻',
-		key=f'B{column}',
-		on_click=handle_click,
-		args=(column,),
-		disabled = disabled)
-
-	for i, row in reversed(list(enumerate(board))):
-		cols = st.columns([33,10,10,10,10,10,10,10,33])
-		for j, field in enumerate(row):
-			cols[j + 1].markdown(f'{draw_piece(board[i,j])}', unsafe_allow_html=True)
-
-
-def draw_piece(player):
-	if player == 1:
-		piece = '🔴'
-	elif player == 2:
-		piece = '🟡'
-	else:
-		piece = '⚪'
-	
-	return f'<p style="text-align:center; font-size: 25px">{piece}</p>'
-
+	@staticmethod
+	def get_piece_html(piece: int) -> str:
+		if piece == PLAYER_PIECE:
+			emoji = '🔴'
+		elif piece == AI_PIECE:
+			emoji = '🟡'
+		else:
+			emoji = '⚪️'
+		return f"<div style='text-align: center; font-size: 50px;'>{emoji}</div>"
 
 def main():
+	st.markdown(
+		"""
+		<style>
+			#MainMenu {visibility: hidden;}
+			footer {visibility: hidden;}
+			header {visibility: hidden;}
+			.css-1v0mbdj, .css-18e3th9 {
+				flex: 1 !important;
+				max-width: 100% !important;
+				min-width: 100% !important;
+			}
+		</style>
+		""",
+		unsafe_allow_html=True
+	)
 
-	st.markdown("""<style> 
-	#MainMenu {visibility: hidden;}
-	footer {visibility: hidden;}
-	header {visibility: hidden;} </style>
-	""", unsafe_allow_html=True)
 
-	with st.expander("CONNECT 4"):
-		st.write("""
-		Hello and welcome to my Connect 4 AI demonstrator,
-		
-		This simple Python/Streamlit app allows you to play against an agent that I created for the [ConnnectX](https://www.kaggle.com/competitions/connectx/leaderboard) Kaggle competition. My best submission consistently ranked in the Top 20 on the leaderboard (Top 10%). \n
-		
-		**Rules:**
-		You play by dropping the red pieces, try to connect 4 of them in a row (either vertically, horizontally, or diagonally) before the AI does it with the yellow pieces.
-		
-		*Note:
-		To keep the game enjoyable, you are playing against an early, tamed down version of the AI with limited Minimax depth of 2 moves per player and a less advanced heuristic. Although not as "smart" as the final submission, you will see that it is already quite challenging to beat.*
-		
+	if 'game' not in st.session_state:
+		st.session_state.game = Connect4Game()
 
-		have fun!
-
-		Corentin de Tilly - [LinkedIn](https://www.linkedin.com/in/corentin-de-tilly/?locale=en_US) - [GitHub](https://github.com/Tcha182) - [CV](https://resume-corentindetilly.streamlit.app/)
-
-		""")
-
-	if "board" not in st.session_state:
-		init()
-
-	draw_board(st.session_state.board)
-
-	if st.session_state.turn == 1 and not st.session_state.game_over:
-		ai_turn()
-		st.rerun()
-
-#	st.write(st.session_state)
-
-	if get_valid_locations(st.session_state.board) == []:
-		st.session_state.game_over = True
-
-	if st.session_state.game_over:
-		if st.session_state.winner == PLAYER:
-			st.success("Congrats! you won the game! 🎈")
-		elif st.session_state.winner == AI:
-			st.error("AI won the game.")
-		else:
-			st.info('It\'s a tie 📍')
-
+	game: Connect4Game = st.session_state.game
+	game.draw_board()
 
 if __name__ == '__main__':
-	main()
+    main()
