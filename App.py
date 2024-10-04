@@ -280,7 +280,7 @@ def main():
 
 	if st.session_state.turn == 1 and not st.session_state.game_over:
 		ai_turn()
-		st.experimental_rerun()
+		st.rerun()
 
 #	st.write(st.session_state)
 
