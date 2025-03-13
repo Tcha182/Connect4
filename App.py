@@ -13,7 +13,7 @@ WINDOW_LENGTH = 4
 EMPTY = 0
 PLAYER_PIECE = 1
 AI_PIECE = 2
-MAX_DEPTH = 5  # AI search depth
+MAX_DEPTH = 7  # AI search depth
 
 # Streamlit Page Configuration
 st.set_page_config(page_title='Connect 4 AI', page_icon='🔴')
