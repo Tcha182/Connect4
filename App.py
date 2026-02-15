@@ -3,6 +3,13 @@ import time
 import math
 from typing import List, Tuple, Optional
 
+# ── Rust Engine (optional, near-instant AI) ──
+try:
+    import connect4_engine as _rust
+    _HAS_RUST = True
+except ImportError:
+    _HAS_RUST = False
+
 # ----------------------------
 #       Global Constants
 # ----------------------------
@@ -334,19 +341,30 @@ class Connect4Game:
                     return
                 self.undo_move(col, AI_PIECE)
 
-            # Iterative deepening search with time limit
-            best_col = valid[0]
-            start_time = time.time()
-            for d in range(1, MAX_DEPTH + 1):
-                col, score = self.minimax(d, -math.inf, math.inf, True)
-                if col is not None:
-                    best_col = col
-                # Stop early if a forced win is found
-                if score >= WIN_SCORE:
-                    break
-                # Time guard: don't start the next depth if we've used > 2s
-                if time.time() - start_time > 2.0:
-                    break
+            if _HAS_RUST:
+                # ── Rust engine path (near-instant) ──
+                if "rust_engine" not in st.session_state:
+                    st.session_state["rust_engine"] = _rust.Engine(ROW_COUNT, COLUMN_COUNT, WINDOW_LENGTH)
+                    print("[connect4] ENGINE=RUST", flush=True)
+                engine = st.session_state["rust_engine"]
+                best_col = int(engine.find_best_move_bb(
+                    self.ai_board, self.player_board, self.heights, 500
+                ))
+            else:
+                # ── Python fallback ──
+                if not hasattr(self, '_logged_py'):
+                    print("[connect4] ENGINE=PYTHON", flush=True)
+                    self._logged_py = True
+                best_col = valid[0]
+                start_time = time.time()
+                for d in range(1, MAX_DEPTH + 1):
+                    col, score = self.minimax(d, -math.inf, math.inf, True)
+                    if col is not None:
+                        best_col = col
+                    if score >= WIN_SCORE:
+                        break
+                    if time.time() - start_time > 2.0:
+                        break
 
             if self.is_valid_location(best_col):
                 self.drop_piece(best_col, AI_PIECE)
