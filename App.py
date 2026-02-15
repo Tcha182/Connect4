@@ -99,7 +99,7 @@ class Connect4Game:
     #  Board Helpers
     # ---------------
     def is_valid_location(self, col: int) -> bool:
-        return self.heights[col] < ROW_COUNT
+        return 0 <= col < COLUMN_COUNT and self.heights[col] < ROW_COUNT
 
     def get_valid_locations(self) -> List[int]:
         return [c for c in range(COLUMN_COUNT) if self.is_valid_location(c)]
@@ -108,6 +108,8 @@ class Connect4Game:
         return all(h == ROW_COUNT for h in self.heights)
 
     def drop_piece(self, col: int, piece: int) -> None:
+        if not self.is_valid_location(col):
+            return
         row = self.heights[col]
         pos = col * COL_HEIGHT + row
         if piece == PLAYER_PIECE:
@@ -117,6 +119,8 @@ class Connect4Game:
         self.heights[col] += 1
 
     def undo_move(self, col: int, piece: int) -> None:
+        if not (0 <= col < COLUMN_COUNT) or self.heights[col] <= 0:
+            return
         self.heights[col] -= 1
         row = self.heights[col]
         pos = col * COL_HEIGHT + row
@@ -313,6 +317,11 @@ class Connect4Game:
     def ai_move(self) -> None:
         if not self.game_over and self.turn == 1:
             valid = self.get_valid_locations()
+            if not valid:
+                self.game_over = True
+                st.session_state["game"] = self
+                st.rerun()
+                return
 
             # Check for immediate winning move (instant response)
             for col in valid:
