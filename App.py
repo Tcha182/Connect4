@@ -1,5 +1,5 @@
 import streamlit as st
-import random
+import time
 import math
 from typing import List, Tuple, Optional
 
@@ -13,7 +13,16 @@ WINDOW_LENGTH = 4
 EMPTY = 0
 PLAYER_PIECE = 1
 AI_PIECE = 2
-MAX_DEPTH = 7  # AI search depth
+MAX_DEPTH = 14  # AI search depth (iterative deepening will use 1..MAX_DEPTH)
+WIN_SCORE = 1_000_000  # Base score for winning positions
+
+# Transposition table entry types
+EXACT = 0
+LOWERBOUND = 1
+UPPERBOUND = 2
+
+# Static move ordering: center columns first (optimal heuristic for Connect 4)
+COLUMN_ORDER = [3, 2, 4, 1, 5, 0, 6]
 
 # Streamlit Page Configuration
 st.set_page_config(page_title='Connect 4 AI', page_icon='🔴')
@@ -162,26 +171,28 @@ class Connect4Game:
         opp_board = self.player_board if piece == AI_PIECE else self.ai_board
         count_piece = (board & window_mask).bit_count()
         count_opp = (opp_board & window_mask).bit_count()
-        empty_count = WINDOW_LENGTH - (count_piece + count_opp)
-        score = 0
+        # Windows with both players' pieces are blocked — no strategic value
+        if count_piece > 0 and count_opp > 0:
+            return 0
+        empty_count = WINDOW_LENGTH - count_piece - count_opp
         if count_piece == 4:
-            score += 100
-        elif count_piece == 3 and empty_count == 1:
-            score += 10
-        elif count_piece == 2 and empty_count == 2:
-            score += 5
+            return 100
+        if count_piece == 3 and empty_count == 1:
+            return 50
+        if count_piece == 2 and empty_count == 2:
+            return 10
         if count_opp == 3 and empty_count == 1:
-            score -= 80
-        return score
+            return -45
+        if count_opp == 2 and empty_count == 2:
+            return -8
+        return 0
 
     def score_position(self, piece: int) -> int:
         score = 0
-        # Center column preference
         board = self.ai_board if piece == AI_PIECE else self.player_board
         center_count = (board & CENTER_MASK).bit_count()
-        score += center_count * 6
+        score += center_count * 12
 
-        # Evaluate each window using bitwise operations
         for window_mask in WINDOW_MASKS:
             score += self.score_window(window_mask, piece)
         return score
@@ -189,50 +200,68 @@ class Connect4Game:
     # ---------------
     #   AI Mechanics
     # ---------------
-    def order_moves(self, valid_locations: List[int], piece: int) -> List[int]:
-        scores = []
-        for col in valid_locations:
-            self.drop_piece(col, piece)
-            s = self.score_position(piece)
-            self.undo_move(col, piece)
-            scores.append((s, col))
-        scores.sort(reverse=True, key=lambda x: x[0])
-        return [col for s, col in scores]
+    def order_moves(self, valid_locations: List[int], tt_move: Optional[int] = None) -> List[int]:
+        """Order moves: TT best move first, then center-biased static order."""
+        ordered = []
+        if tt_move is not None and tt_move in valid_locations:
+            ordered.append(tt_move)
+        for col in COLUMN_ORDER:
+            if col in valid_locations and col != tt_move:
+                ordered.append(col)
+        return ordered
 
-    def get_board_key(self) -> Tuple[int, int, int]:
-        return (self.player_board, self.ai_board, self.turn)
+    def minimax(self, depth: int, alpha: float, beta: float, maximizing_player: bool) -> Tuple[Optional[int], float]:
+        orig_alpha = alpha
+        orig_beta = beta
 
-    def minimax(self, depth: int, alpha: float, beta: float, maximizing_player: bool) -> Tuple[Optional[int], int]:
-        board_key = self.get_board_key()
+        # Transposition table lookup
+        board_key = (self.player_board, self.ai_board)
+        tt_move = None
         if board_key in self.cache:
-            cached_depth, cached_col, cached_score = self.cache[board_key]
+            cached_depth, cached_col, cached_score, cached_flag = self.cache[board_key]
+            tt_move = cached_col
             if cached_depth >= depth:
-                return cached_col, cached_score
+                if cached_flag == EXACT:
+                    return cached_col, cached_score
+                elif cached_flag == LOWERBOUND:
+                    alpha = max(alpha, cached_score)
+                elif cached_flag == UPPERBOUND:
+                    beta = min(beta, cached_score)
+                if alpha >= beta:
+                    return cached_col, cached_score
 
         valid_locations = self.get_valid_locations()
-        is_terminal = self.winning_move(PLAYER_PIECE) or self.winning_move(AI_PIECE) or self.is_board_full()
 
-        if depth == 0 or is_terminal:
-            if is_terminal:
-                if self.winning_move(AI_PIECE):
-                    return None, math.inf
-                elif self.winning_move(PLAYER_PIECE):
-                    return None, -math.inf
-                else:
-                    return None, 0
-            else:
-                return None, self.score_position(AI_PIECE)
+        # Terminal node checks
+        if self.winning_move(AI_PIECE):
+            return None, WIN_SCORE + depth
+        if self.winning_move(PLAYER_PIECE):
+            return None, -(WIN_SCORE + depth)
+        if not valid_locations:
+            return None, 0
+        if depth == 0:
+            return None, self.score_position(AI_PIECE)
+
+        # Check for immediate winning move (avoids unnecessary recursion)
+        piece = AI_PIECE if maximizing_player else PLAYER_PIECE
+        for col in valid_locations:
+            self.drop_piece(col, piece)
+            if self.winning_move(piece):
+                self.undo_move(col, piece)
+                score = (WIN_SCORE + depth - 1) if maximizing_player else -(WIN_SCORE + depth - 1)
+                self.cache[board_key] = (depth, col, score, EXACT)
+                return col, score
+            self.undo_move(col, piece)
+
+        ordered = self.order_moves(valid_locations, tt_move)
 
         if maximizing_player:
             value = -math.inf
-            best_col = None
-            ordered_locations = self.order_moves(valid_locations, AI_PIECE)
-            for col in ordered_locations:
+            best_col = ordered[0]
+            for col in ordered:
                 self.drop_piece(col, AI_PIECE)
-                self.turn = 0
                 _, new_score = self.minimax(depth - 1, alpha, beta, False)
                 self.undo_move(col, AI_PIECE)
-                self.turn = 1
                 if new_score > value:
                     value = new_score
                     best_col = col
@@ -241,14 +270,11 @@ class Connect4Game:
                     break
         else:
             value = math.inf
-            best_col = None
-            ordered_locations = self.order_moves(valid_locations, PLAYER_PIECE)
-            for col in ordered_locations:
+            best_col = ordered[0]
+            for col in ordered:
                 self.drop_piece(col, PLAYER_PIECE)
-                self.turn = 1
                 _, new_score = self.minimax(depth - 1, alpha, beta, True)
                 self.undo_move(col, PLAYER_PIECE)
-                self.turn = 0
                 if new_score < value:
                     value = new_score
                     best_col = col
@@ -256,7 +282,16 @@ class Connect4Game:
                 if alpha >= beta:
                     break
 
-        self.cache[board_key] = (depth, best_col, value)
+        # Store in transposition table with bound type
+        if value <= orig_alpha:
+            flag = UPPERBOUND
+        elif value >= orig_beta:
+            flag = LOWERBOUND
+        else:
+            flag = EXACT
+        if len(self.cache) > 1_000_000:
+            self.cache.clear()
+        self.cache[board_key] = (depth, best_col, value, flag)
         return best_col, value
 
     # ---------------
@@ -277,16 +312,42 @@ class Connect4Game:
 
     def ai_move(self) -> None:
         if not self.game_over and self.turn == 1:
-            col, _ = self.minimax(MAX_DEPTH, -math.inf, math.inf, True)
-            if col is not None and self.is_valid_location(col):
+            valid = self.get_valid_locations()
+
+            # Check for immediate winning move (instant response)
+            for col in valid:
                 self.drop_piece(col, AI_PIECE)
+                if self.winning_move(AI_PIECE):
+                    self.game_over = True
+                    self.winner = AI_PIECE
+                    st.session_state["game"] = self
+                    st.rerun()
+                    return
+                self.undo_move(col, AI_PIECE)
+
+            # Iterative deepening search with time limit
+            best_col = valid[0]
+            start_time = time.time()
+            for d in range(1, MAX_DEPTH + 1):
+                col, score = self.minimax(d, -math.inf, math.inf, True)
+                if col is not None:
+                    best_col = col
+                # Stop early if a forced win is found
+                if score >= WIN_SCORE:
+                    break
+                # Time guard: don't start the next depth if we've used > 2s
+                if time.time() - start_time > 2.0:
+                    break
+
+            if self.is_valid_location(best_col):
+                self.drop_piece(best_col, AI_PIECE)
                 if self.winning_move(AI_PIECE):
                     self.game_over = True
                     self.winner = AI_PIECE
                 elif self.is_board_full():
                     self.game_over = True
                 else:
-                    self.turn = 0  # Switch back to player
+                    self.turn = 0
             st.session_state["game"] = self
             st.rerun()
 
